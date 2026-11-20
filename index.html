@@ -274,6 +274,11 @@ textarea{resize:vertical;font-size:13px}
 .acct[hidden]{display:none}
 .acct .lbl{margin-bottom:2px}
 
+/* giorni della settimana */
+.days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.days button{height:44px;border-radius:14px;font-size:13px;font-weight:700;color:var(--ink);background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.2);box-shadow:inset 0 1px 0 rgba(255,255,255,.25);transition:transform .5s var(--spring),background .25s,color .25s}
+.days button[aria-pressed=true]{background:linear-gradient(165deg,rgba(255,214,160,.98),rgba(255,138,58,.92));color:#2b1200;border-color:rgba(255,255,255,.5);box-shadow:inset 0 1.5px 0 rgba(255,255,255,.8),0 6px 14px -6px rgba(255,120,40,.6)}
+.days button:active{transform:scale(.88)}
 /* chiusure, opzioni */
 .chk{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--ink);cursor:pointer}
 .chk input{-webkit-appearance:checkbox;appearance:auto;width:22px;height:22px;padding:0;box-shadow:none;accent-color:var(--amber);flex:none}
@@ -417,6 +422,11 @@ button.warn:active:not(:disabled){transform:scale(.97)}
       <p class="err" id="acctErr" role="alert"></p>
     </div>
     <div class="field"><label for="fName">Nome del tirocinio (facoltativo)</label><input id="fName" type="text" maxlength="40" placeholder="Es. nome dell'azienda" autocomplete="off"></div>
+    <div class="field"><label id="daysLbl">Giorni in cui fai tirocinio</label>
+      <div class="days" id="daysRow" role="group" aria-labelledby="daysLbl">
+        <button type="button" data-d="1">Lun</button><button type="button" data-d="2">Mar</button><button type="button" data-d="3">Mer</button><button type="button" data-d="4">Gio</button><button type="button" data-d="5">Ven</button><button type="button" data-d="6">Sab</button><button type="button" data-d="0">Dom</button>
+      </div>
+    </div>
     <div class="field-row two">
       <div class="field"><label for="fStart">Primo giorno</label><input id="fStart" type="date"></div>
       <div class="field"><label for="fEnd">Ultimo giorno</label><input id="fEnd" type="date"></div>
@@ -467,7 +477,7 @@ button.warn:active:not(:disabled){transform:scale(.97)}
 
 /* <core> */
 let TOTAL=800,START='2026-01-01';
-let FULL=8,CLOSED=[];
+let FULL=8,CLOSED=[],DAYS=[1,2,3,4,5];
 const pad=n=>String(n).padStart(2,'0');
 const key=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 const parse=k=>{const p=k.split('-').map(Number);return new Date(p[0],p[1]-1,p[2]);};
@@ -495,7 +505,8 @@ function holidays(y){
 const holidayName=d=>holidays(d.getFullYear())[pad(d.getMonth()+1)+'-'+pad(d.getDate())]||null;
 const isWeekend=d=>d.getDay()===0||d.getDay()===6;
 const isClosed=d=>{const k=key(d);for(let i=0;i<CLOSED.length;i++)if(k>=CLOSED[i][0]&&k<=CLOSED[i][1])return true;return false;};
-const isWorking=d=>!isWeekend(d)&&!holidayName(d)&&!isClosed(d);
+const isWorkDay=d=>DAYS.indexOf(d.getDay())>=0;
+const isWorking=d=>isWorkDay(d)&&!holidayName(d)&&!isClosed(d);
 
 /* Calcola, giorno per giorno, ore svolte/previste e progressione cumulata. */
 function compute(hours,today){
@@ -570,12 +581,15 @@ function validateConfig(c){
   if(!validDate(start)||!Number.isInteger(total)||total<1||total>5000)return null;
   const per=c.perDay===undefined?8:Number(c.perDay);
   if(!Number.isInteger(per)||per<1||per>10)return null;
+  let days=[];
+  (Array.isArray(c.days)?c.days:[1,2,3,4,5]).forEach(n=>{n=Number(n);if(Number.isInteger(n)&&n>=0&&n<=6&&days.indexOf(n)<0)days.push(n);});
+  if(!days.length)return null;
   const closed=[];
   (Array.isArray(c.closed)?c.closed:[]).forEach(r=>{
     if(r&&validDate(String(r.a))&&validDate(String(r.b))&&r.a<=r.b&&closed.length<60)closed.push({a:r.a,b:r.b});
   });
   closed.sort((x,y)=>x.a<y.a?-1:x.a>y.a?1:0);
-  return{name:String(c.name||'').trim().slice(0,40),start:start,total:total,perDay:per,closed:closed,
+  return{name:String(c.name||'').trim().slice(0,40),start:start,total:total,perDay:per,days:days,closed:closed,
     recipient:String(c.recipient||'').trim().slice(0,30),remind:c.remind!==false};
 }
 function clean(h){
@@ -612,16 +626,16 @@ function load(){
     return cfg?{config:cfg,hours:clean(o.hours),sent:cleanSent(o.sent),updated:Number(o.updated)||0,owner:o.owner||null}:null;
   }catch(e){return null;}
 }
-const DEFAULT_CFG=()=>({name:'',start:key(today),total:800,perDay:8,closed:[],recipient:'',remind:true});
+const DEFAULT_CFG=()=>({name:'',start:key(today),total:800,perDay:8,days:[1,2,3,4,5],closed:[],recipient:'',remind:true});
 function applyConfig(cfg){
   TOTAL=cfg.total;START=cfg.start;
   const oldFull=FULL;
-  FULL=cfg.perDay;CLOSED=cfg.closed.map(r=>[r.a,r.b]);
+  FULL=cfg.perDay;DAYS=cfg.days.slice();CLOSED=cfg.closed.map(r=>[r.a,r.b]);
   if(oldFull!==FULL||!$('segIn').style.getPropertyValue('--n')){
     $('segIn').querySelectorAll('button').forEach(b=>b.remove());
     $('segIn').style.setProperty('--n',String(FULL+1));lastV=null;
   }
-  $('fine').textContent='Stima a '+FULL+' ore per ogni giorno lavorativo, esclusi weekend, festività nazionali'+(CLOSED.length?' e giorni di chiusura.':'.');
+  $('fine').textContent='Stima a '+FULL+' ore per ogni tuo giorno di tirocinio, escluse le festività nazionali'+(CLOSED.length?' e i giorni di chiusura.':'.');
   const tk=key(today);
   state.sel=tk<START?START:tk;
   const d=parse(state.sel);state.view={y:d.getFullYear(),m:d.getMonth()};
@@ -708,8 +722,8 @@ function renderDay(){
   let note='';
   const hol=holidayName(d);
   if(hol)note='Festivo: '+hol+'. Non conta, a meno che tu inserisca delle ore.';
-  else if(isClosed(d)&&!isWeekend(d))note='Giorno di chiusura che hai segnato. Non conta, a meno che tu inserisca delle ore.';
-  else if(isWeekend(d))note='Weekend. Non conta, a meno che tu inserisca delle ore.';
+  else if(isClosed(d)&&isWorkDay(d))note='Giorno di chiusura che hai segnato. Non conta, a meno che tu inserisca delle ore.';
+  else if(!isWorkDay(d))note=(isWeekend(d)?'Weekend':'Non è tra i tuoi giorni di tirocinio')+'. Non conta, a meno che tu inserisca delle ore.';
   else if(k>key(today))note='Giorno futuro: sono ore previste. Metti 0 per segnarlo libero.';
   else if(v===undefined)note=k===key(today)?'Quante ore hai fatto oggi?':'Nessuna ora registrata per questo giorno.';
   else note='Ore registrate per questo giorno.';
@@ -818,7 +832,7 @@ function renderCal(){
 
 /* ---------- promemoria del resoconto settimanale ---------- */
 const mondayOf=d=>addDays(d,-((d.getDay()+6)%7));
-function reminderDay(mon){for(let i=4;i>=0;i--){const d=addDays(mon,i);if(isWorking(d))return d;}return null;}
+function reminderDay(mon){const order=[4,3,2,1,0,6,5];for(let i=0;i<order.length;i++){const d=addDays(mon,order[i]);if(isWorking(d))return d;}return null;}
 function dueWeek(){
   if(!state.config||!state.config.remind||!calc)return null;
   const mon0=mondayOf(today);
@@ -832,7 +846,7 @@ function dueWeek(){
     if(!prev&&today<rd)continue;
     if(prev&&today>addDays(mon,9))continue;
     let sum=0,any=false;const miss=[];
-    for(let j=0;j<5;j++){
+    for(let j=0;j<7;j++){
       const d=addDays(mon,j),k=key(d),inf=calc.days[k];
       if(!inf||k<START)continue;
       if(inf.kind==='done'){sum+=inf.eff;any=true;}
@@ -884,20 +898,20 @@ $('rmDone').addEventListener('click',()=>{
 });
 
 /* ---------- impostazioni, primo avvio, backup ---------- */
-let sheetMode='settings',resetTimer=null,draftClosed=[];
+let sheetMode='settings',resetTimer=null,draftClosed=[],draftDays=[1,2,3,4,5];
 const bkMsg=(t,err)=>{const el=$('bkMsg');el.textContent=t;el.className=err?'err':'ok';};
 function openSheet(mode){
   sheetMode=mode;const sh=$('sheet');renderAcct();
   sh.classList.toggle('setup',mode==='setup');
-  const c=state.config||{name:'',start:key(today),total:800,perDay:8,closed:[],recipient:'',remind:true};
+  const c=state.config||{name:'',start:key(today),total:800,perDay:8,days:[1,2,3,4,5],closed:[],recipient:'',remind:true};
   $('shTitle').textContent=mode==='setup'?'Benvenuto':'Impostazioni';
   $('shLead').textContent=mode==='setup'
-    ?'Dimmi quando inizia il tirocinio, quante ore fai al giorno e quante ore devi fare in tutto. Il calendario salta weekend e festività italiane.'
+    ?'Dimmi quando inizia il tirocinio, quante ore fai al giorno e quante ore devi fare in tutto. Scegli i giorni della settimana in cui lavori: il calendario salta gli altri e le festività italiane.'
     :'Cambiare queste voci non cancella le ore già segnate.';
   $('bkTitle').textContent=mode==='setup'?'Hai già un backup?':'Backup';
   $('fName').value=c.name;$('fStart').value=c.start;$('fTotal').value=String(c.total);
   $('fPerDay').value=String(c.perDay);$('fRecipient').value=c.recipient||'';$('fRemind').checked=c.remind!==false;
-  draftClosed=c.closed.map(r=>({a:r.a,b:r.b}));$('cFrom').value='';$('cTo').value='';$('closedMsg').textContent='';renderClosed();
+  draftDays=c.days.slice();renderDays();draftClosed=c.closed.map(r=>({a:r.a,b:r.b}));$('cFrom').value='';$('cTo').value='';$('closedMsg').textContent='';renderClosed();
   $('bkLead').textContent=(cloud&&cloud.user)?'I tuoi dati sono già sincronizzati con il tuo account Google. Il backup è una copia di sicurezza in più.':'I dati restano solo in questo browser. Se cambi telefono o cancelli i dati del browser li perdi: ogni tanto salva un backup.';
   $('shErr').textContent='';bkMsg('');$('bkText').value='';resetBtnLabel();$('fEnd').dataset.manual='';$('fEnd').value=endForTotal(c.start,c.total,c.perDay);rangeHint();
   sh.hidden=false;document.body.style.overflow='hidden';
@@ -907,7 +921,7 @@ function openSheet(mode){
 }
 /* intervallo di date <-> ore totali (giorni lavorativi x ore al giorno, senza weekend, festivi e chiusure) */
 const perDayVal=()=>{const n=Number($('fPerDay').value);return Number.isInteger(n)&&n>=1&&n<=10?n:FULL;};
-function withDraft(fn){const old=CLOSED;CLOSED=draftClosed.map(r=>[r.a,r.b]);try{return fn();}finally{CLOSED=old;}}
+function withDraft(fn){const oc=CLOSED,od=DAYS;CLOSED=draftClosed.map(r=>[r.a,r.b]);DAYS=draftDays.slice();try{return fn();}finally{CLOSED=oc;DAYS=od;}}
 function countWork(a,b){return withDraft(()=>{let n=0;for(let d=parse(a),e=parse(b);d<=e;d=addDays(d,1))if(isWorking(d))n++;return n;});}
 function endForTotal(start,total,per){
   return withDraft(()=>{
@@ -920,7 +934,7 @@ function rangeHint(){
   const a=$('fStart').value,b=$('fEnd').value,h=$('rangeHint');
   if(validDate(a)&&validDate(b)){
     if(b<a)h.textContent='L’ultimo giorno è prima del primo: controlla le date.';
-    else{const n=countWork(a,b);h.textContent=n+' giorni lavorativi × '+perDayVal()+' h, senza weekend, festività italiane e chiusure. Puoi correggere il totale a mano.';}
+    else{const n=countWork(a,b);h.textContent=n+' giorni di tirocinio × '+perDayVal()+' h, senza festività italiane e chiusure. Puoi correggere il totale a mano.';}
   }else h.textContent='Scegli le due date e calcolo io le ore, oppure scrivi il totale.';
 }
 function onDates(){
@@ -947,6 +961,17 @@ $('fStart').addEventListener('change',()=>{
 $('fEnd').addEventListener('change',()=>{$('fEnd').dataset.manual='1';onDates();});
 $('fTotal').addEventListener('input',()=>{$('fEnd').dataset.manual='';onTotal();});
 $('fPerDay').addEventListener('input',recalcFromState);
+function renderDays(){
+  $('daysRow').querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(draftDays.indexOf(Number(b.dataset.d))>=0)));
+}
+$('daysRow').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  const n=Number(b.dataset.d),i=draftDays.indexOf(n);
+  if(i>=0)draftDays.splice(i,1);else draftDays.push(n);
+  renderDays();
+  if(!draftDays.length){$('rangeHint').textContent='Scegli almeno un giorno della settimana.';return;}
+  recalcFromState();
+});
 const fmtChip=k=>parse(k).toLocaleDateString('it-IT',{day:'numeric',month:'short'});
 function renderClosed(){
   const box=$('closedList');box.innerHTML='';
@@ -964,8 +989,8 @@ $('cAdd').addEventListener('click',()=>{
   if(!validDate(a)){m.textContent='Scegli il giorno di chiusura.';return;}
   if(!validDate(b)||b<a){m.textContent='La data finale non può essere prima della iniziale.';return;}
   if(draftClosed.length>=60){m.textContent='Troppe chiusure: massimo 60.';return;}
-  let n=0;for(let d=parse(a),e=parse(b);d<=e;d=addDays(d,1))if(!isWeekend(d)&&!holidayName(d))n++;
-  if(!n){m.textContent='In quel periodo ci sono solo weekend e festivi, che sono già esclusi.';return;}
+  const n=withDraft(()=>{let k=0;for(let d=parse(a),e=parse(b);d<=e;d=addDays(d,1))if(isWorkDay(d)&&!holidayName(d)&&!isClosed(d))k++;return k;});
+  if(!n){m.textContent='In quel periodo non ci sono giorni di tirocinio da escludere (weekend, festivi e giorni non tuoi sono già fuori).';return;}
   draftClosed.push({a:a,b:b});draftClosed.sort((x,y)=>x.a<y.a?-1:x.a>y.a?1:0);
   m.textContent=n+(n===1?' giorno lavorativo escluso.':' giorni lavorativi esclusi.');
   $('cFrom').value='';$('cTo').value='';renderClosed();recalcFromState();
@@ -994,9 +1019,10 @@ $('shSave').addEventListener('click',()=>{
   if(validDate(start)&&validDate(endv)&&endv<start){$('shErr').textContent='L’ultimo giorno non può essere prima del primo.';return;}
   if(!validDate(start)){$('shErr').textContent='Scegli il primo giorno del tirocinio.';return;}
   if(!Number.isInteger(total)||total<1||total>5000){$('shErr').textContent='Le ore totali devono essere un numero intero tra 1 e 5000.';return;}
+  if(!draftDays.length){$('shErr').textContent='Scegli almeno un giorno della settimana in cui fai tirocinio.';return;}
   const per=Number($('fPerDay').value);
   if(!Number.isInteger(per)||per<1||per>10){$('shErr').textContent='Le ore al giorno devono essere un numero intero tra 1 e 10.';return;}
-  const cfg=validateConfig({name:$('fName').value,start:start,total:total,perDay:per,closed:draftClosed,recipient:$('fRecipient').value,remind:$('fRemind').checked});
+  const cfg=validateConfig({name:$('fName').value,start:start,total:total,perDay:per,days:draftDays,closed:draftClosed,recipient:$('fRecipient').value,remind:$('fRemind').checked});
   state.config=cfg;applyConfig(cfg);state.updated=Date.now();save();render();closeSheet();
 });
 $('bkDownload').addEventListener('click',()=>{
